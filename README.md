@@ -48,8 +48,9 @@ Part of the LiquiFact stack: frontend (Next.js) | backend (this repo) | contract
 | `npm run start:dist` | Start compiled output from `dist/` |
 | `npm run lint` | Run ESLint on `src/` |
 | `npm test` | Run load helper tests and structured error tests |
-| `npm run test:coverage` | Run helper/API tests with coverage |
-| `npm run load:baseline` | Run the core endpoint load baseline suite |
+| `npm run db:migrate` | Run database migrations |
+| `npm run db:rollback` | Rollback last migration |
+| `npm run db:seed` | Run database seeds |
 
 Default port: `3001`.
 Escrow Redis cache is optional and disabled by default; set `REDIS_ESCROW_CACHE_ENABLED=true` with `REDIS_URL` to enable it.
@@ -74,7 +75,7 @@ Core routes currently covered:
 
 - Health: `GET /health`
 - API Info: `GET /api`
-- Invoices: `GET /api/invoices`, `GET /api/invoices/:id`, `POST /api/invoices`, `DELETE /api/invoices/:id`, `PATCH /api/invoices/:id/restore`
+- Invoices: `GET /api/invoices` (with optional status filter), `GET /api/invoices/:id`, `POST /api/invoices`
 - Escrow: `GET /api/escrow/:invoiceId`, `POST /api/escrow`
 - Investment: `GET /api/invest/opportunities`
 - SME Metrics: `GET /api/sme/metrics`

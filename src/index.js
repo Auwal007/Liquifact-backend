@@ -1,53 +1,39 @@
-// 'use strict';
+'use strict';
 
-// /**
-//  * Express server bootstrap for invoice financing, auth, and Stellar integration.
-//  *
-//  * All /api/* routes now enforce tenant-scoped data isolation:
-//  *   - `extractTenant` middleware resolves the caller's tenantId from either
-//  *     the `x-tenant-id` request header or an authenticated JWT claim.
-//  *   - Every invoice read/write delegates to the tenant-aware repository so
-//  *     that no tenant can ever observe or mutate another tenant's data.
-//  */
+const express = require('express');
+const cors = require('cors');
+require('dotenv').config();
 
-// const express = require('express');
-// const cors = require('cors');
-// require('dotenv').config();
-// // import { securityMiddleware } from "./middleware/security.js";
-// const { createSecurityMiddleware } = require('./middleware/security');
+const config = require('./config');
+// Fail-fast boot validation
+if (process.env.NODE_ENV !== 'test') {
+  config.validate();
+}
 
-// securityMiddleware(app);
-// const { createSecurityMiddleware } = require('./middleware/security');
-// const { createCorsOptions } = require('./config/cors');
-// const { correlationIdMiddleware } = require('./middleware/correlationId');
-// const { jsonBodyLimit, urlencodedBodyLimit, payloadTooLargeHandler } = require('./middleware/bodySizeLimits');
-// const { auditMiddleware } = require('./middleware/audit');
-// const { globalLimiter, sensitiveLimiter } = require('./middleware/rateLimit');
-// const { authenticateToken } = require('./middleware/auth');
-// const smeRouter = require('./routes/sme');
-// const errorHandler = require('./middleware/errorHandler');
-// const { callSorobanContract } = require('./services/soroban');
-// const AppError = require('./errors/AppError');
-// const logger = require('./logger');
-// const requestId = require('./middleware/requestId');
-// const pinoHttp = require('pino-http');
-// const investRoutes = require('./routes/invest');
-
-// const PORT = process.env.PORT || 3001;
-
-// // In-memory storage for invoices (Issue #25).
-// let invoices = [];
-
-// /**
-//  * Create the Express application instance.
-//  *
-//  * @param {object} [options={}] - App options.
-//  * @param {boolean} [options.enableTestRoutes=false] - Whether to expose test-only routes.
-//  * @returns {import('express').Express}
-//  */
-// function createApp(options = {}) {
-//   const { enableTestRoutes = false } = options;
-//   const app = express();
+const { createSecurityMiddleware } = require('./middleware/security');
+const { createCorsOptions } = require('./config/cors');
+const { correlationIdMiddleware } = require('./middleware/correlationId');
+const {
+  jsonBodyLimit,
+  urlencodedBodyLimit,
+  payloadTooLargeHandler,
+} = require('./middleware/bodySizeLimits');
+const { auditMiddleware } = require('./middleware/audit');
+const { globalLimiter, sensitiveLimiter } = require('./middleware/rateLimit');
+const { authenticateToken } = require('./middleware/auth');
+const { extractTenant } = require('./middleware/tenant');
+const smeRouter = require('./routes/sme');
+const errorHandler = require('./middleware/errorHandler');
+const { callSorobanContract } = require('./services/soroban');
+const { performHealthChecks } = require('./services/health');
+const invoiceService = require('./services/invoiceService');
+const AppError = require('./errors/AppError');
+const logger = require('./logger');
+const requestId = require('./middleware/requestId');
+const pinoHttp = require('pino-http');
+const investRoutes = require('./routes/invest');
+const invoiceRoutes = require('./routes/invoiceRoutes');
+const invoiceFileRouter = require('./routes/invoiceFile');
 
 //   app.use(requestId);
 //   app.use(pinoHttp({
@@ -335,8 +321,7 @@ const invoiceFileRouter = require('./routes/invoiceFile');
 
 const PORT = process.env.PORT || 3001;
 
-// In-memory storage
-let invoices = [];
+// In-memory storage for escrow (database migration pending)
 const escrowSummaryCache = createRedisEscrowSummaryCache();
 
 function parseLedgerSequence(value) {
@@ -404,6 +389,7 @@ function createApp(options = {}) {
 
   app.use('/api/sme', smeRouter);
   app.use('/api/invest', investRoutes);
+  app.use('/api/invoices', authenticateToken, extractTenant, invoiceRoutes);
 
   /**
    * @swagger
@@ -488,50 +474,48 @@ function createApp(options = {}) {
   app.use('/api/invest', investRoutes);
   app.use('/api/invoices', invoiceFileRouter);
 
-  app.get('/api/invoices', validateQuery(paginationQuerySchema), (req, res) => {
-    const { page, limit, status, smeId, buyerId, dateFrom, dateTo, sortBy, order } = req.validatedQuery;
-    const includeDeleted = req.query.includeDeleted === 'true';
-
-    const filtered = includeDeleted
-      ? invoices
-      : invoices.filter((inv) => !inv.deletedAt);
-
-    res.json({
-      data: filtered,
-      message: includeDeleted
-        ? 'Showing all invoices (including deleted).'
-        : 'Showing active invoices.',
-    });
+  app.get('/api/invoices', authenticateToken, extractTenant, async (req, res) => {
+    try {
+      const { status } = req.query;
+      const invoices = await invoiceService.getInvoices(req.tenantId, status);
+      return res.json({
+        data: invoices,
+        message: status ? `Showing invoices with status: ${status}` : 'Showing all invoices',
+      });
+    } catch (error) {
+      logger.error('Error fetching invoices:', error);
+      return res.status(500).json({ error: 'Internal server error' });
+    }
   });
 
   app.post(
     '/api/invoices',
     authenticateToken,
+    extractTenant,
     sensitiveLimiter,
-    (req, res) => {
-      const { amount, customer } = req.body;
+    async (req, res) => {
+      try {
+        const { amount, customer, metadata } = req.body;
 
-      if (!amount || !customer) {
-        return res
-          .status(400)
-          .json({ error: 'Amount and customer are required' });
+        if (!amount || !customer) {
+          return res
+            .status(400)
+            .json({ error: 'Amount and customer are required' });
+        }
+
+        const newInvoice = await invoiceService.createInvoice(
+          { amount, customer, metadata },
+          req.tenantId
+        );
+
+        res.status(201).json({
+          data: newInvoice,
+          message: 'Invoice created successfully.',
+        });
+      } catch (error) {
+        logger.error('Error creating invoice:', error);
+        return res.status(500).json({ error: 'Internal server error' });
       }
-
-      const newInvoice = {
-        id: `inv_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
-        amount,
-        customer,
-        status: 'pending_verification',
-        createdAt: new Date().toISOString(),
-        deletedAt: null,
-      };
-
-      invoices.push(newInvoice);
-
-      res.status(201).json({
-        data: newInvoice,
-        message: 'Invoice uploaded successfully.',
-      });
     }
   );
 
