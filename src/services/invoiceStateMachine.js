@@ -98,10 +98,10 @@ function getAllowedTransitions(fromState) {
  * @param {string} options.currentState Current invoice state
  * @param {string} options.targetState Desired target state
  * @param {string} options.actor User performing the transition
- * @param {string} [options.reason] Reason for transition
+ * @param {string} [options.reason] Reason for transition (unused in validation)
  * @returns {Object} Validation result with isValid and error
  */
-function validateTransition({ invoiceId, currentState, targetState, actor, reason }) {
+function validateTransition({ invoiceId, currentState, targetState, actor, reason: _reason }) {
   // Validate required fields
   if (!invoiceId) {
     return {

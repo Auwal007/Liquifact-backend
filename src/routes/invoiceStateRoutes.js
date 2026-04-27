@@ -10,17 +10,18 @@ const router = express.Router();
 const {
   INVOICE_STATES,
   executeTransition,
-  validateTransition,
   getAllowedTransitions,
   getTransitionHistory,
   canLinkToEscrow,
 } = require('../services/invoiceStateMachine');
 const { getAuditLogs } = require('../services/auditLog');
-const logger = require('../logger');
 
 /**
  * Helper to extract actor from request
  * In production, this would come from JWT middleware
+ * 
+ * @param {import('express').Request} req Express request object
+ * @returns {string} Actor identifier
  */
 function getActorFromRequest(req) {
   if (req.user && req.user.id) {
