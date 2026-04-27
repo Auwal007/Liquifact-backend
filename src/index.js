@@ -35,6 +35,7 @@ const pinoHttp = require('pino-http');
 const investRoutes = require('./routes/invest');
 const invoiceRoutes = require('./routes/invoiceRoutes');
 const invoiceFileRouter = require('./routes/invoiceFile');
+const { createEscrowIndexer } = require('./jobs/escrowIndexer');
 /**
  * Combined authentication middleware: allows JWT or API key for admin/service auth.
  * @param {object} req - Express request.
@@ -1185,10 +1186,21 @@ const appInstance = createApp({
   enableTestRoutes: process.env.NODE_ENV === 'test',
 });
 
+let escrowIndexer = null;
+
 function startServer() {
-  return appInstance.listen(PORT, () => {
+  const server = appInstance.listen(PORT, () => {
     logger.warn(`API running at http://localhost:${PORT}`);
   });
+
+  const enabled = String(process.env.ESCROW_INDEXER_ENABLED || 'false').toLowerCase() === 'true';
+  if (enabled) {
+    escrowIndexer = createEscrowIndexer();
+    escrowIndexer.start();
+    logger.info('Escrow indexer started.');
+  }
+
+  return server;
 }
 
 function resetStore() {
@@ -1203,3 +1215,4 @@ module.exports = appInstance;
 module.exports.createApp = createApp;
 module.exports.startServer = startServer;
 module.exports.resetStore = resetStore;
+module.exports.getEscrowIndexer = () => escrowIndexer;
