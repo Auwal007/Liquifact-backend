@@ -109,6 +109,7 @@ router.get('/:id/state', (req, res) => {
  * @param {import('express').Request} req
  * @param {import('express').Response} res
  * @param {import('express').NextFunction} next
+ * @returns {void}
  */
 function conditionalKycGate(req, res, next) {
   const { targetState } = req.body || {};

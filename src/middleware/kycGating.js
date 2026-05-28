@@ -29,6 +29,7 @@ const logger = require('../logger');
  * @param {import('express').Request}  req  - Express request object
  * @param {import('express').Response} res  - Express response object
  * @param {import('express').NextFunction} next - Express next middleware
+ * @returns {Promise<void>}
  * @throws {AppError} 401 if unauthenticated
  * @throws {AppError} 400 if the JWT contains no smeId claim
  * @throws {AppError} 403 if KYC requirements are not met
@@ -143,6 +144,7 @@ async function requireKycForFunding(req, res, next) {
  * @param {import('express').Request}  req
  * @param {import('express').Response} res
  * @param {import('express').NextFunction} next
+ * @returns {Promise<void>}
  */
 async function auditKycAccess(req, res, next) {
   if (req.kyc) {
